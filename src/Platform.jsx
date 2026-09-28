@@ -23,6 +23,7 @@ import {
   Mail,
   MailPlus,
   MapPin,
+  Palette,
   Plus,
   Search,
   Settings2,
@@ -35,6 +36,7 @@ import {
   X,
 } from 'lucide-react'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
+import { authErrorMessage, errorIncludes, friendlyErrorMessage } from './lib/userMessages'
 import './platform.css'
 
 const navigation = [
@@ -68,6 +70,53 @@ function BrandMark() {
 
 function Brand({ onClick }) {
   return <button className="platform-brand" onClick={onClick} aria-label="Voltar ao site"><BrandMark /><span>prumo<span>.</span></span></button>
+}
+
+function brandTheme(color) {
+  const value = /^#[0-9a-f]{6}$/i.test(color || '') ? color : '#e8e9a8'
+  const [red, green, blue] = [1, 3, 5].map((index) => parseInt(value.slice(index, index + 2), 16))
+  const linear = [red, green, blue].map((channel) => {
+    const normalized = channel / 255
+    return normalized <= 0.04045 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4
+  })
+  const luminance = 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+  const contrastOnDark = (luminance + 0.05) / 0.05
+  const contrastOnLight = 1.05 / (luminance + 0.05)
+  const readableAccent = contrastOnDark >= 4.5 ? value : '#f1f2e8'
+  const buttonForeground = contrastOnDark >= contrastOnLight ? '#191a14' : '#f7f7ef'
+
+  return {
+    '--brand-color': value,
+    '--brand-color-soft': `rgba(${red}, ${green}, ${blue}, .10)`,
+    '--brand-color-border': `rgba(${red}, ${green}, ${blue}, .22)`,
+    '--brand-readable': readableAccent,
+    '--brand-on-color': buttonForeground,
+  }
+}
+
+function OrganizationLogo({ organization, className = '' }) {
+  const [failed, setFailed] = useState(false)
+  const logoPath = organization?.logo_url || ''
+  const logoUrl = logoPath.startsWith('http')
+    ? logoPath
+    : logoPath && supabase
+      ? supabase.storage.from('organization-branding').getPublicUrl(logoPath).data.publicUrl
+      : ''
+
+  useEffect(() => setFailed(false), [logoUrl])
+
+  if (logoUrl && !failed) {
+    return <img className={`organization-logo-image ${className}`} src={logoUrl} alt={`Logo da empresa ${organization?.name || ''}`} onError={() => setFailed(true)} />
+  }
+
+  return <span className={`company-avatar organization-logo-fallback ${className}`} aria-hidden="true">{initials(organization?.name || 'Prumo')}</span>
+}
+
+function WorkspaceBrand({ organization, onClick }) {
+  return <button className="workspace-brand" onClick={onClick} aria-label={`Voltar ao site do Prumo · ${organization?.name || 'sua empresa'}`}>
+    <OrganizationLogo organization={organization} className="workspace-brand-logo" />
+    <span><strong>{organization?.name || 'Sua empresa'}</strong><small>Espaço da equipe</small></span>
+  </button>
 }
 
 function StatusBadge({ status }) {
@@ -141,7 +190,7 @@ function Platform({ onExit }) {
     let active = true
     supabase.auth.getSession().then(({ data, error }) => {
       if (!active) return
-      if (error) setAuthError(error.message)
+      if (error) setAuthError(friendlyErrorMessage(error, 'Não foi possível recuperar seu acesso. Atualize a página e tente novamente.'))
       setSession(data?.session || null)
       setAuthLoading(false)
     })
@@ -194,7 +243,7 @@ function Platform({ onExit }) {
         window.location.hash = '#app'
       }
     } catch (error) {
-      setAuthError(error.message || 'Não foi possível acessar sua conta agora.')
+      setAuthError(authErrorMessage(error, mode))
     } finally {
       setBusy(false)
     }
@@ -246,11 +295,12 @@ function AccessScreen({ mode, setMode, onSubmit, busy, error, notice, inviteToke
           </div>
           <div className="access-decoration"><BrandMark /><span>PRUMO / OPERAÇÃO COMPROVADA</span></div>
         </section>
-        <section className="access-card">
+        <section className="access-card" style={inviteDetails ? brandTheme(inviteDetails.brand_color) : undefined}>
           <div className="access-card-mark"><BrandMark /></div>
           <span className="access-kicker">{inviteToken ? 'CONVITE PARA A EQUIPE' : mode === 'login' ? 'BEM-VINDO DE VOLTA' : 'COMECE POR AQUI'}</span>
           <h2>{inviteToken ? 'Entre na equipe' : mode === 'login' ? 'Acesse sua conta' : 'Crie sua conta'}</h2>
           <p>{inviteToken && inviteDetails ? `${inviteDetails.organization_name} convidou você como ${roleNames[inviteDetails.role] || 'membro'}.` : mode === 'login' ? 'Entre para acompanhar sua operação.' : 'Configure sua empresa e convide sua equipe depois.'}</p>
+          {inviteToken && inviteDetails && <div className="invite-company-brand"><OrganizationLogo organization={{ name: inviteDetails.organization_name, logo_url: inviteDetails.logo_url }} className="invite-brand-logo" /><strong>{inviteDetails.organization_name}</strong></div>}
           {inviteLoading && <div className="access-message"><LoaderCircle className="spin" size={16} /><span>Validando convite…</span></div>}
           {inviteError && <div className="access-message access-error"><AlertCircle size={16} /><span>{inviteError}</span></div>}
           {inviteToken && inviteDetails && !inviteLoading && <div className="access-message invite-manual-note"><Mail size={16} /><span>O convite não depende do SMTP do Prumo. Se a confirmação de conta estiver ativa no Supabase, a confirmação ainda depende da configuração de e-mail do Supabase.</span></div>}
@@ -311,6 +361,8 @@ function Workspace({ session, inviteToken, inviteDetails, onInviteAccepted, onSi
   const [selectedInterval, setSelectedInterval] = useState('monthly')
   const [planBusy, setPlanBusy] = useState(false)
   const [planError, setPlanError] = useState('')
+  const [brandBusy, setBrandBusy] = useState(false)
+  const [brandError, setBrandError] = useState('')
 
   async function refreshWorkspace() {
     setLoading(true)
@@ -359,9 +411,9 @@ function Workspace({ session, inviteToken, inviteDetails, onInviteAccepted, onSi
       if (!active) return
       setInviteProcessing(false)
       if (error) {
-        setInviteAcceptError(error.message?.includes('invited email')
+        setInviteAcceptError(errorIncludes(error, 'invited email', 'e-mail que recebeu o convite')
           ? `Este convite foi enviado para ${inviteDetails?.email || 'outro e-mail'}. Saia e entre ou crie uma conta usando esse endereço.`
-          : error.message?.includes('already belongs')
+          : errorIncludes(error, 'already belongs', 'já está vinculada a uma empresa')
             ? 'Esta conta já está vinculada a outra empresa. Use uma conta sem vínculo para aceitar este convite.'
             : 'Não foi possível aceitar o convite. Ele pode ter expirado ou sido cancelado; peça à empresa um novo link.')
       } else {
@@ -392,7 +444,7 @@ function Workspace({ session, inviteToken, inviteDetails, onInviteAccepted, onSi
     })
     setSetupBusy(false)
     if (error) {
-      setSetupError(error.message.includes('already belongs') ? 'Esta conta já está associada a uma empresa. Atualize a página para continuar.' : 'Não foi possível criar a empresa. Confira se o schema.sql foi executado no Supabase e tente novamente.')
+      setSetupError(errorIncludes(error, 'already belongs', 'já está vinculada a uma empresa') ? 'Esta conta já está associada a uma empresa. Atualize a página para continuar.' : friendlyErrorMessage(error, 'Não foi possível criar a empresa. Confira se o schema.sql foi executado no Supabase e tente novamente.'))
       return
     }
     await refreshWorkspace()
@@ -410,11 +462,13 @@ function Workspace({ session, inviteToken, inviteDetails, onInviteAccepted, onSi
     })
     setInviteBusy(false)
     if (error) {
-      setInviteActionError(error.message?.includes('already a pending')
+      setInviteActionError(errorIncludes(error, 'already a pending', 'já existe um convite pendente')
         ? 'Já existe um convite pendente para esse e-mail.'
-        : error.message?.includes('already a member')
+        : errorIncludes(error, 'already a member', 'já pertence à equipe')
           ? 'Esse e-mail já pertence à equipe.'
-          : 'Não foi possível criar o convite. Confira se o schema atualizado foi aplicado no Supabase.')
+          : errorIncludes(error, 'valid email address', 'endereço de e-mail válido')
+            ? 'Informe um endereço de e-mail válido.'
+            : friendlyErrorMessage(error, 'Não foi possível criar o convite. Confira se o schema atualizado foi aplicado no Supabase.'))
       return
     }
     const url = new URL(window.location.href)
@@ -459,13 +513,109 @@ function Workspace({ session, inviteToken, inviteDetails, onInviteAccepted, onSi
     })
     setPlanBusy(false)
     if (error) {
-      setPlanError(error.message?.includes('already been used')
+      setPlanError(errorIncludes(error, 'already been used', 'período de teste gratuito já foi utilizado')
         ? 'Este período de teste já foi usado nesta empresa. Escolha a opção de plano pago.'
-        : 'Não foi possível salvar a escolha. Confira se o schema atualizado foi aplicado no Supabase.')
+        : friendlyErrorMessage(error, 'Não foi possível salvar a escolha. Confira se o schema atualizado foi aplicado no Supabase.'))
       return
     }
     setNotice(startTrial ? 'Período de teste iniciado por 14 dias. Nenhuma cobrança foi feita.' : 'Plano registrado. O checkout ainda será conectado; nenhuma cobrança foi feita.')
     await refreshWorkspace()
+  }
+
+  async function updateOrganizationBrand(updates, successMessage) {
+    if (!['owner', 'manager'].includes(profile?.role)) {
+      setBrandError('Somente administradores e gestores podem alterar a identidade da empresa.')
+      return false
+    }
+    setBrandBusy(true)
+    setBrandError('')
+    const { data, error } = await supabase
+      .from('organizations')
+      .update(updates)
+      .eq('id', profile.organization_id)
+      .select('*')
+      .single()
+    setBrandBusy(false)
+    if (error) {
+      setBrandError(friendlyErrorMessage(error, 'Não foi possível salvar a identidade da empresa. Tente novamente.'))
+      return false
+    }
+    setOrganization(data)
+    setNotice(successMessage)
+    return true
+  }
+
+  async function saveOrganizationBrand({ name, brandColor }) {
+    const trimmedName = name.trim()
+    if (trimmedName.length < 2 || trimmedName.length > 120) {
+      setBrandError('O nome da empresa precisa ter entre 2 e 120 caracteres.')
+      return false
+    }
+    if (!/^#[0-9a-f]{6}$/i.test(brandColor)) {
+      setBrandError('Escolha uma cor válida para a marca.')
+      return false
+    }
+    return updateOrganizationBrand({ name: trimmedName, brand_color: brandColor }, 'Identidade da empresa atualizada.')
+  }
+
+  async function uploadOrganizationLogo(file) {
+    const extensionsByType = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' }
+    const extension = extensionsByType[file?.type]
+    if (!extension) {
+      setBrandError('Envie uma imagem PNG, JPG ou WebP.')
+      return false
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setBrandError('A logo deve ter no máximo 2 MB.')
+      return false
+    }
+
+    setBrandBusy(true)
+    setBrandError('')
+    const storage = supabase.storage.from('organization-branding')
+    const path = `${profile.organization_id}/${crypto.randomUUID()}.${extension}`
+    const { error: uploadError } = await storage.upload(path, file, {
+      contentType: file.type,
+      cacheControl: '3600',
+      upsert: false,
+    })
+    if (uploadError) {
+      setBrandBusy(false)
+      setBrandError(friendlyErrorMessage(uploadError, 'Não foi possível enviar a logo. Confira se o bucket organization-branding foi criado pelo schema.sql.'))
+      return false
+    }
+
+    const previousLogo = organization?.logo_url || ''
+    const { data, error } = await supabase
+      .from('organizations')
+      .update({ logo_url: path })
+      .eq('id', profile.organization_id)
+      .select('*')
+      .single()
+    if (error) {
+      await storage.remove([path])
+      setBrandBusy(false)
+      setBrandError(friendlyErrorMessage(error, 'A logo foi enviada, mas não foi possível associá-la à empresa. Tente novamente.'))
+      return false
+    }
+
+    setOrganization(data)
+    if (previousLogo && !previousLogo.startsWith('http') && previousLogo !== path) {
+      await storage.remove([previousLogo])
+    }
+    setBrandBusy(false)
+    setNotice('Logo da empresa atualizada.')
+    return true
+  }
+
+  async function removeOrganizationLogo() {
+    const previousLogo = organization?.logo_url || ''
+    if (!previousLogo) return true
+    const saved = await updateOrganizationBrand({ logo_url: null }, 'Logo da empresa removida.')
+    if (saved && !previousLogo.startsWith('http')) {
+      await supabase.storage.from('organization-branding').remove([previousLogo])
+    }
+    return saved
   }
 
   async function createClient(event) {
@@ -597,10 +747,9 @@ function Workspace({ session, inviteToken, inviteDetails, onInviteAccepted, onSi
   }
 
   return (
-    <div className="workspace-shell">
+    <div className="workspace-shell" style={brandTheme(organization?.brand_color)}>
       <aside className="workspace-sidebar">
-        <Brand onClick={onExit} />
-        <div className="workspace-company"><span className="company-avatar">{initials(organization?.name || 'Prumo')}</span><span><strong>{organization?.name || 'Sua empresa'}</strong><small>Espaço de trabalho</small></span><ChevronDown size={14} /></div>
+        <WorkspaceBrand organization={organization} onClick={onExit} />
         <span className="sidebar-label">MENU PRINCIPAL</span>
         <nav className="workspace-nav" aria-label="Menu da plataforma">
           {navigation.map(({ id, label, icon: Icon }) => <button key={id} className={section === id ? 'selected' : ''} onClick={() => { setSection(id); setQuery('') }}><Icon size={17} /><span>{label}</span>{id === 'orders' && activeOrders.length > 0 && <i className="nav-count">{activeOrders.length}</i>}</button>)}
@@ -613,17 +762,18 @@ function Workspace({ session, inviteToken, inviteDetails, onInviteAccepted, onSi
       </aside>
       <main className="workspace-main">
         <header className="workspace-topbar">
-          <div className="workspace-breadcrumb"><span>Prumo</span><ChevronRight size={14} /><strong>{title}</strong></div>
+          <div className="workspace-breadcrumb"><span>{organization?.name || 'Prumo'}</span><ChevronRight size={14} /><strong>{title}</strong></div>
           <div className="workspace-top-actions"><span className="workspace-live"><i /> Operação conectada</span><span className="user-avatar top-avatar">{initials(profile.full_name || user.email || '')}</span></div>
         </header>
         <div className="workspace-content">
           {pageError && <div className="workspace-alert"><AlertCircle size={16} />{pageError}</div>}
           {notice && <div className="workspace-alert success-alert"><CheckCircle2 size={16} />{notice}<button onClick={() => setNotice('')} aria-label="Fechar aviso"><X size={14} /></button></div>}
-          {renderSection()}
+        {renderSection()}
         </div>
       </main>
       {selectedOrder && <OrderPanel
         order={selectedOrder}
+        organization={organization}
         clientName={orderClientNames[selectedOrder.client_id]}
         assigneeName={memberNames[selectedOrder.assigned_to]}
         evidence={evidence.filter((item) => item.service_order_id === selectedOrder.id)}
@@ -690,7 +840,7 @@ function Workspace({ session, inviteToken, inviteDetails, onInviteAccepted, onSi
     if (section === 'team') return <TeamPage members={members} invitations={invitations} canManage={['owner', 'manager'].includes(profile.role)} onInvite={() => { setInviteActionError(''); setCreatedInvite(null); setShowInviteForm(true) }} onRevoke={revokeInvitation} />
     if (section === 'evidence') return <EvidencePage evidence={evidence} orders={orders} onSelectOrder={setSelectedOrderId} />
     if (section === 'billing') return <PlanPage currentPlan={organization?.plan_code} organization={organization} selectedPlan={selectedPlan} setSelectedPlan={setSelectedPlan} selectedInterval={selectedInterval} setSelectedInterval={setSelectedInterval} onSave={savePlan} busy={planBusy} error={planError} canManage={profile.role === 'owner'} billingStatus={organization?.billing_status} />
-    return <SettingsPage organization={organization} profile={profile} user={user} />
+    return <SettingsPage organization={organization} profile={profile} user={user} busy={brandBusy} error={brandError} onSaveBrand={saveOrganizationBrand} onUploadLogo={uploadOrganizationLogo} onRemoveLogo={removeOrganizationLogo} />
   }
 }
 
@@ -837,10 +987,61 @@ function EvidencePage({ evidence, orders, onSelectOrder }) {
   </>
 }
 
-function SettingsPage({ organization, profile, user }) {
+function SettingsPage({ organization, profile, user, busy, error, onSaveBrand, onUploadLogo, onRemoveLogo }) {
+  const canManageBrand = ['owner', 'manager'].includes(profile.role)
+  const [companyName, setCompanyName] = useState(organization?.name || '')
+  const [brandColor, setBrandColor] = useState(organization?.brand_color || '#e8e9a8')
+
+  useEffect(() => {
+    setCompanyName(organization?.name || '')
+    setBrandColor(organization?.brand_color || '#e8e9a8')
+  }, [organization?.name, organization?.brand_color])
+
+  async function saveBrand(event) {
+    event.preventDefault()
+    await onSaveBrand({ name: companyName, brandColor })
+  }
+
+  async function selectLogo(event) {
+    const input = event.currentTarget
+    const file = input.files?.[0]
+    if (!file) return
+    await onUploadLogo(file)
+    input.value = ''
+  }
+
   return <>
-    <div className="page-heading"><div><span className="workspace-eyebrow">SEU ESPAÇO DE TRABALHO</span><h1>Configurações</h1><p>Informações da empresa e da conta que está conectada.</p></div></div>
-    <section className="workspace-card settings-card"><div className="settings-section"><span className="settings-symbol"><Building2 size={17} /></span><div><span className="settings-kicker">EMPRESA</span><h2>{organization?.name || 'Sua empresa'}</h2><p>Organização responsável por estes serviços e registros.</p></div></div><div className="settings-divider" /><div className="settings-section"><span className="settings-symbol user-symbol"><CircleUserRound size={17} /></span><div><span className="settings-kicker">CONTA</span><h2>{profile.full_name || 'Membro'}</h2><p>{user.email} · {roleNames[profile.role] || 'Membro'}</p></div></div><div className="settings-footer"><ShieldCheck size={14} /> As informações de empresa são gerenciadas pelos administradores do espaço.</div></section>
+    <div className="page-heading"><div><span className="workspace-eyebrow">SUA EMPRESA E SUA CONTA</span><h1>Configurações</h1><p>Personalize a identidade que aparece para as pessoas da sua equipe.</p></div></div>
+    <section className="workspace-card settings-card brand-settings-card">
+      <div className="settings-brand-heading"><span className="settings-symbol"><Palette size={17} /></span><div><span className="settings-kicker">IDENTIDADE DA EMPRESA</span><h2>Marca da equipe</h2><p>A logo e a cor aparecem no espaço de trabalho de todos os colaboradores.</p></div></div>
+      <div className="brand-settings-layout">
+        <div className="brand-preview-card">
+          <span className="settings-kicker">PRÉVIA NA PLATAFORMA</span>
+          <div className="brand-preview-identity"><OrganizationLogo organization={{ ...organization, name: companyName, brand_color: brandColor }} className="brand-preview-logo" /><span><strong>{companyName || 'Nome da empresa'}</strong><small>Espaço de trabalho</small></span></div>
+          <span className="brand-preview-action" style={{ backgroundColor: brandColor, color: brandTheme(brandColor)['--brand-on-color'] }}>Nova ordem de serviço</span>
+        </div>
+        <form className="platform-form brand-settings-form" onSubmit={saveBrand}>
+          <label>Nome da empresa<input value={companyName} onChange={(event) => setCompanyName(event.target.value)} minLength="2" maxLength="120" autoComplete="organization" required disabled={!canManageBrand || busy} /></label>
+          <label className="brand-color-field">Cor principal da marca<span className="brand-color-control"><input type="color" value={brandColor} onChange={(event) => setBrandColor(event.target.value)} aria-label="Escolher cor principal da marca" disabled={!canManageBrand || busy} /><code>{brandColor.toUpperCase()}</code></span></label>
+          {error && <div className="access-message access-error" role="alert"><AlertCircle size={15} /><span>{error}</span></div>}
+          {canManageBrand
+            ? <button className="platform-primary" type="submit" disabled={busy}>{busy ? <LoaderCircle className="spin" size={15} /> : <CheckCircle2 size={15} />}Salvar identidade</button>
+            : <div className="access-message"><ShieldCheck size={15} /><span>Apenas administradores e gestores podem alterar a identidade da empresa.</span></div>}
+        </form>
+      </div>
+      <div className="settings-divider" />
+      <div className="brand-logo-row">
+        <OrganizationLogo organization={organization} className="brand-logo-large" />
+        <div className="brand-logo-copy"><strong>Logo da empresa</strong><span>PNG, JPG ou WebP · até 2 MB</span></div>
+        {canManageBrand && <div className="brand-logo-actions">
+          <label className={`platform-secondary brand-file-button ${busy ? 'is-disabled' : ''}`}><Upload size={14} />{organization?.logo_url ? 'Trocar logo' : 'Enviar logo'}<input type="file" accept="image/png,image/jpeg,image/webp" onChange={selectLogo} disabled={busy} aria-label="Enviar logo da empresa" /></label>
+          {organization?.logo_url && <button className="platform-secondary brand-remove-button" type="button" onClick={onRemoveLogo} disabled={busy}><Trash2 size={14} />Remover</button>}
+        </div>}
+      </div>
+      <div className="settings-divider" />
+      <div className="settings-section account-settings-section"><span className="settings-symbol user-symbol"><CircleUserRound size={17} /></span><div><span className="settings-kicker">CONTA CONECTADA</span><h2>{profile.full_name || 'Membro'}</h2><p>{user.email} · {roleNames[profile.role] || 'Membro'}</p></div></div>
+      <div className="settings-footer"><ShieldCheck size={14} /> As alterações da empresa aparecem para todos os membros do espaço.</div>
+    </section>
   </>
 }
 
@@ -852,8 +1053,8 @@ function Modal({ title, subtitle, onClose, children }) {
   return <div className="modal-scrim" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><section className="form-modal" aria-modal="true" role="dialog" aria-labelledby="form-modal-title"><div className="form-modal-heading"><div><span className="modal-kicker">PRUMO / OPERAÇÃO</span><h2 id="form-modal-title">{title}</h2><p>{subtitle}</p></div><button className="icon-button" onClick={onClose} aria-label="Fechar"><X size={17} /></button></div>{children}</section></div>
 }
 
-function OrderPanel({ order, clientName, assigneeName, evidence, error, saving, onClose, onStatusChange, onAddEvidence }) {
-  return <div className="order-scrim" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><aside className="order-panel" aria-label="Detalhes da ordem"><div className="order-panel-top"><span className="modal-kicker">DETALHES DO SERVIÇO</span><button className="icon-button" onClick={onClose} aria-label="Fechar"><X size={17} /></button></div><span className="order-code">{order.code}</span><h2>{order.title}</h2><StatusBadge status={order.status} />
+function OrderPanel({ order, organization, clientName, assigneeName, evidence, error, saving, onClose, onStatusChange, onAddEvidence }) {
+  return <div className="order-scrim" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><aside className="order-panel" aria-label="Detalhes da ordem"><div className="order-panel-top"><div className="order-panel-brand"><OrganizationLogo organization={organization} className="order-panel-logo" /><span><small>COMPROVANTE DA EMPRESA</small><strong>{organization?.name || 'Sua empresa'}</strong></span></div><button className="icon-button" onClick={onClose} aria-label="Fechar"><X size={17} /></button></div><span className="order-code">{order.code}</span><h2>{order.title}</h2><StatusBadge status={order.status} />
     <div className="order-facts"><div><Building2 size={16} /><span><small>Cliente</small><strong>{clientName || 'Sem cliente associado'}</strong></span></div><div><CalendarDays size={16} /><span><small>Agendamento</small><strong>{formatDate(order.scheduled_for, { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</strong></span></div><div><CircleUserRound size={16} /><span><small>Responsável</small><strong>{assigneeName || 'Equipe não definida'}</strong></span></div><div><Clock3 size={16} /><span><small>Criada em</small><strong>{formatDate(order.created_at, { day: '2-digit', month: 'long', year: 'numeric' })}</strong></span></div></div>
     {order.description && <div className="order-description"><span>INSTRUÇÕES</span><p>{order.description}</p></div>}
     <label className="status-select-label">Atualizar andamento<select value={order.status} onChange={(event) => onStatusChange(event.target.value)}>{Object.entries(statuses).map(([value, status]) => <option key={value} value={value}>{status.label}</option>)}</select><ChevronDown size={14} /></label>

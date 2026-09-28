@@ -128,10 +128,10 @@ declare
   current_user_id uuid := auth.uid();
 begin
   if current_user_id is null then
-    raise exception 'Authentication required';
+    raise exception 'É necessário entrar na plataforma para continuar.';
   end if;
   if exists (select 1 from public.profiles where id = current_user_id) then
-    raise exception 'User already belongs to an organization';
+    raise exception 'Esta conta já está vinculada a uma empresa.';
   end if;
 
   insert into public.organizations (name) values (trim(org_name)) returning id into new_organization_id;
@@ -158,13 +158,13 @@ declare
   selected_price integer;
 begin
   if current_user_id is null then
-    raise exception 'Authentication required';
+    raise exception 'É necessário entrar na plataforma para continuar.';
   end if;
   if requested_plan is null or requested_plan not in ('essencial', 'equipe', 'operacao') then
-    raise exception 'Invalid plan';
+    raise exception 'O plano selecionado é inválido.';
   end if;
   if requested_interval is null or requested_interval not in ('monthly', 'yearly') then
-    raise exception 'Invalid billing interval';
+    raise exception 'O período de cobrança selecionado é inválido.';
   end if;
   selected_price := case requested_plan
     when 'essencial' then case requested_interval when 'monthly' then 4900 else 49000 end
@@ -179,10 +179,10 @@ begin
   for update of o;
 
   if current_org.id is null then
-    raise exception 'Only the organization owner can select a plan';
+    raise exception 'Somente o administrador da empresa pode escolher um plano.';
   end if;
   if start_trial and current_org.trial_started_at is not null then
-    raise exception 'The free trial has already been used';
+    raise exception 'O período de teste gratuito já foi utilizado nesta empresa.';
   end if;
 
   update public.organizations
@@ -215,10 +215,10 @@ declare
   invite_expiry timestamptz;
 begin
   if current_user_id is null then
-    raise exception 'Authentication required';
+    raise exception 'É necessário entrar na plataforma para continuar.';
   end if;
   if invitee_role is null or invitee_role not in ('manager', 'technician') then
-    raise exception 'Invalid team role';
+    raise exception 'O papel selecionado para a equipe é inválido.';
   end if;
 
   select organization_id into current_org_id
@@ -226,24 +226,24 @@ begin
   where id = current_user_id and role in ('owner', 'manager');
 
   if current_org_id is null then
-    raise exception 'Only owners and managers can invite team members';
+    raise exception 'Somente administradores e gestores podem convidar colaboradores.';
   end if;
   if normalized_email !~* '^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$' then
-    raise exception 'Enter a valid email address';
+    raise exception 'Informe um endereço de e-mail válido.';
   end if;
   if exists (
     select 1 from public.profiles p
     join auth.users u on u.id = p.id
     where p.organization_id = current_org_id and lower(u.email) = normalized_email
   ) then
-    raise exception 'This person is already a member of the company';
+    raise exception 'Este e-mail já pertence à equipe da empresa.';
   end if;
   if exists (
     select 1 from public.team_invitations i
     where i.organization_id = current_org_id and i.email = normalized_email
       and i.accepted_at is null and i.revoked_at is null and i.expires_at > now()
   ) then
-    raise exception 'There is already a pending invitation for this email';
+    raise exception 'Já existe um convite pendente para este e-mail.';
   end if;
 
   invite_token := encode(gen_random_bytes(32), 'hex');
@@ -275,13 +275,15 @@ declare
   details jsonb;
 begin
   if invite_token is null or length(trim(invite_token)) < 32 then
-    raise exception 'Invitation link is invalid or expired';
+    raise exception 'Este convite é inválido, foi cancelado ou expirou. Peça à empresa um novo link.';
   end if;
 
   select jsonb_build_object(
     'email', i.email,
     'role', i.role,
     'organization_name', o.name,
+    'logo_url', o.logo_url,
+    'brand_color', o.brand_color,
     'expires_at', i.expires_at
   ) into details
   from public.team_invitations i
@@ -290,7 +292,7 @@ begin
     and i.accepted_at is null and i.revoked_at is null and i.expires_at > now();
 
   if details is null then
-    raise exception 'Invitation link is invalid or expired';
+    raise exception 'Este convite é inválido, foi cancelado ou expirou. Peça à empresa um novo link.';
   end if;
   return details;
 end;
@@ -330,14 +332,14 @@ begin
   select organization_id into current_org_id from public.profiles
   where id = current_user_id and role in ('owner', 'manager');
   if current_org_id is null then
-    raise exception 'Only owners and managers can revoke invitations';
+    raise exception 'Somente administradores e gestores podem cancelar convites.';
   end if;
   update public.team_invitations
   set revoked_at = now()
   where id = invitation_id and organization_id = current_org_id
     and accepted_at is null and revoked_at is null;
   if not found then
-    raise exception 'Invitation was not found or is no longer pending';
+    raise exception 'O convite não foi encontrado ou não está mais pendente.';
   end if;
 end;
 $$;
@@ -358,7 +360,7 @@ declare
   invite_hash text;
 begin
   if current_user_id is null then
-    raise exception 'Authentication required';
+    raise exception 'É necessário entrar na plataforma para continuar.';
   end if;
   select lower(email) into current_email from auth.users where id = current_user_id;
   invite_hash := encode(digest(trim(coalesce(invite_token, '')), 'sha256'), 'hex');
@@ -366,22 +368,22 @@ begin
   select * into invitation from public.team_invitations
   where token_hash = invite_hash for update;
   if not found then
-    raise exception 'Invitation link is invalid or expired';
+    raise exception 'Este convite é inválido, foi cancelado ou expirou. Peça à empresa um novo link.';
   end if;
   if invitation.accepted_at is not null then
     if invitation.accepted_by = current_user_id then
       return invitation.organization_id;
     end if;
-    raise exception 'Invitation has already been used';
+    raise exception 'Este convite já foi utilizado.';
   end if;
   if invitation.revoked_at is not null or invitation.expires_at <= now() then
-    raise exception 'Invitation link is invalid or expired';
+    raise exception 'Este convite é inválido, foi cancelado ou expirou. Peça à empresa um novo link.';
   end if;
   if current_email is null or current_email <> invitation.email then
-    raise exception 'Sign in or create an account using the invited email address';
+    raise exception 'Entre ou crie uma conta usando o endereço de e-mail que recebeu o convite.';
   end if;
   if exists (select 1 from public.profiles where id = current_user_id) then
-    raise exception 'This account already belongs to a company';
+    raise exception 'Esta conta já está vinculada a uma empresa.';
   end if;
 
   insert into public.profiles (id, organization_id, full_name, role)
@@ -471,6 +473,63 @@ create policy "Anyone can request a product demo" on public.demo_requests
 insert into storage.buckets (id, name, public)
 values ('service-evidence', 'service-evidence', false)
 on conflict (id) do nothing;
+
+-- Logos são exibidas na experiência da equipe e podem ser usadas nos comprovantes.
+-- Cada arquivo fica em <organization_id>/<arquivo> e aceita apenas imagens pequenas.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('organization-branding', 'organization-branding', true, 2097152, array['image/png', 'image/jpeg', 'image/webp'])
+on conflict (id) do update
+set public = excluded.public,
+    file_size_limit = excluded.file_size_limit,
+    allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists "Company managers can upload brand assets" on storage.objects;
+create policy "Company managers can upload brand assets" on storage.objects
+  for insert to authenticated
+  with check (
+    bucket_id = 'organization-branding'
+    and (storage.foldername(name))[1] = (select public.current_organization_id())::text
+    and exists (
+      select 1 from public.profiles p
+      where p.id = auth.uid() and p.organization_id = (select public.current_organization_id())
+        and p.role in ('owner', 'manager')
+    )
+  );
+
+drop policy if exists "Company managers can replace brand assets" on storage.objects;
+create policy "Company managers can replace brand assets" on storage.objects
+  for update to authenticated
+  using (
+    bucket_id = 'organization-branding'
+    and (storage.foldername(name))[1] = (select public.current_organization_id())::text
+    and exists (
+      select 1 from public.profiles p
+      where p.id = auth.uid() and p.organization_id = (select public.current_organization_id())
+        and p.role in ('owner', 'manager')
+    )
+  )
+  with check (
+    bucket_id = 'organization-branding'
+    and (storage.foldername(name))[1] = (select public.current_organization_id())::text
+    and exists (
+      select 1 from public.profiles p
+      where p.id = auth.uid() and p.organization_id = (select public.current_organization_id())
+        and p.role in ('owner', 'manager')
+    )
+  );
+
+drop policy if exists "Company managers can delete brand assets" on storage.objects;
+create policy "Company managers can delete brand assets" on storage.objects
+  for delete to authenticated
+  using (
+    bucket_id = 'organization-branding'
+    and (storage.foldername(name))[1] = (select public.current_organization_id())::text
+    and exists (
+      select 1 from public.profiles p
+      where p.id = auth.uid() and p.organization_id = (select public.current_organization_id())
+        and p.role in ('owner', 'manager')
+    )
+  );
 
 drop policy if exists "Members can view evidence files in their organization" on storage.objects;
 create policy "Members can view evidence files in their organization" on storage.objects
