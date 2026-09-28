@@ -122,7 +122,10 @@ alter table public.service_evidence enable row level security;
 alter table public.demo_requests enable row level security;
 
 grant select on public.organizations, public.profiles, public.clients, public.service_orders, public.service_evidence to authenticated;
-grant update on public.organizations, public.profiles to authenticated;
+grant update on public.organizations to authenticated;
+-- Evita que um membro altere o próprio papel e se promova a administrador.
+revoke update on public.profiles from authenticated;
+grant update (full_name) on public.profiles to authenticated;
 grant insert, update, delete on public.clients, public.service_orders, public.service_evidence to authenticated;
 grant insert on public.demo_requests to anon, authenticated;
 

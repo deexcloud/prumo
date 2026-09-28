@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   ArrowRight,
   ArrowUpRight,
@@ -22,6 +22,7 @@ import {
 } from 'lucide-react'
 import { createDemoRequest } from './lib/leads'
 import { Button } from './components/ui/primitives'
+import Platform from './Platform'
 
 const benefits = [
   {
@@ -193,6 +194,13 @@ function ContactForm({ onSubmit }) {
 function App() {
   const [menuOpen, setMenuOpen] = useState(false)
   const [notice, setNotice] = useState(null)
+  const [platformOpen, setPlatformOpen] = useState(() => ['#acesso', '#app'].includes(window.location.hash))
+
+  useEffect(() => {
+    const syncRoute = () => setPlatformOpen(['#acesso', '#app'].includes(window.location.hash))
+    window.addEventListener('hashchange', syncRoute)
+    return () => window.removeEventListener('hashchange', syncRoute)
+  }, [])
 
   const handleDemoRequest = async (email) => {
     let result
@@ -208,6 +216,13 @@ function App() {
 
   const closeMenu = () => setMenuOpen(false)
 
+  if (platformOpen) {
+    return <Platform onExit={() => {
+      window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#inicio`)
+      setPlatformOpen(false)
+    }} />
+  }
+
   return (
     <div className="site-shell" id="inicio">
       <header className="site-header">
@@ -218,10 +233,10 @@ function App() {
             <a href="#recursos" onClick={closeMenu}>Recursos</a>
             <a href="#sua-marca" onClick={closeMenu}>Sua marca</a>
             <a href="#como-funciona" onClick={closeMenu}>Como funciona</a>
-            <div className="mobile-nav-cta"><a className="button button-primary" href="#contato" onClick={closeMenu}>Agendar demonstração <ArrowRight size={15} /></a></div>
+            <div className="mobile-nav-cta"><a className="mobile-access-link" href="#acesso" onClick={closeMenu}>Acessar plataforma <ArrowUpRight size={14} /></a><a className="button button-primary" href="#contato" onClick={closeMenu}>Agendar demonstração <ArrowRight size={15} /></a></div>
           </nav>
           <div className="header-actions">
-            <a className="header-login" href="#plataforma">Acessar plataforma <ArrowUpRight size={14} /></a>
+            <a className="header-login" href="#acesso">Acessar plataforma <ArrowUpRight size={14} /></a>
             <a className="button button-primary header-cta" href="#contato">Agendar demonstração <ArrowRight size={15} /></a>
             <button className="mobile-menu-button" aria-label={menuOpen ? 'Fechar menu' : 'Abrir menu'} onClick={() => setMenuOpen((open) => !open)}>{menuOpen ? <X size={19} /> : <Menu size={19} />}</button>
           </div>

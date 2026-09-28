@@ -306,6 +306,8 @@ a { color: inherit; text-decoration: none; }
   .desktop-nav.nav-open { display: flex; }
   .desktop-nav > a { padding: 13px 5px; border-bottom: 1px solid rgba(255,255,255,.055); font-size: 13px; }
   .mobile-nav-cta { display: block; padding-top: 15px; }
+  .mobile-access-link { display: flex; align-items: center; justify-content: space-between; padding: 10px 5px 13px; color: #d9dbca; font-size: 12px; }
+  .mobile-access-link svg { color: #babc7d; }
   .mobile-nav-cta .button { width: 100%; height: 43px; }
   .hero-section { padding-top: 49px; }
   .hero-inner { display: flex; flex-direction: column; align-items: stretch; gap: 28px; padding: 0 18px 35px; }
