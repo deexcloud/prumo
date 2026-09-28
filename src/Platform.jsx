@@ -12,6 +12,8 @@ import {
   ChevronRight,
   CircleUserRound,
   ClipboardList,
+  Copy,
+  CreditCard,
   Clock3,
   FileCheck2,
   LayoutDashboard,
@@ -19,12 +21,14 @@ import {
   LockKeyhole,
   LogOut,
   Mail,
+  MailPlus,
   MapPin,
   Plus,
   Search,
   Settings2,
   ShieldCheck,
   StickyNote,
+  Trash2,
   Upload,
   Users,
   Wrench,
@@ -39,6 +43,13 @@ const navigation = [
   { id: 'clients', label: 'Clientes', icon: Building2 },
   { id: 'team', label: 'Equipe', icon: Users },
   { id: 'evidence', label: 'Comprovantes', icon: FileCheck2 },
+  { id: 'billing', label: 'Plano e pagamento', icon: CreditCard },
+]
+
+const plans = [
+  { code: 'essencial', name: 'Prumo Essencial', priceMonthly: 4900, priceYearly: 49000, detail: 'Para organizar atendimentos e clientes em um só lugar.', features: ['Ordens de serviço', 'Cadastro de clientes', 'Registro de evidências'] },
+  { code: 'equipe', name: 'Prumo Equipe', priceMonthly: 11900, priceYearly: 119000, detail: 'Para coordenar colaboradores e atividades em campo.', features: ['Tudo do Essencial', 'Convites para equipe', 'Acompanhamento centralizado'] },
+  { code: 'operacao', name: 'Prumo Operação', priceMonthly: 24900, priceYearly: 249000, detail: 'Para operações que precisam de mais controle e acompanhamento.', features: ['Tudo do Equipe', 'Visão centralizada da operação', 'Estrutura para crescer'] },
 ]
 
 const statuses = {
@@ -71,6 +82,14 @@ function formatDate(value, options = { day: '2-digit', month: 'short' }) {
   return new Intl.DateTimeFormat('pt-BR', options).format(date)
 }
 
+function formatPrice(value) {
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value / 100)
+}
+
+function planPrice(plan, interval) {
+  return interval === 'yearly' ? plan.priceYearly : plan.priceMonthly
+}
+
 function initials(value = '') {
   return value.trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || 'P'
 }
@@ -82,6 +101,37 @@ function Platform({ onExit }) {
   const [authNotice, setAuthNotice] = useState('')
   const [busy, setBusy] = useState(false)
   const [mode, setMode] = useState('login')
+  const [inviteToken, setInviteToken] = useState(() => new URLSearchParams(window.location.search).get('invite') || '')
+  const [inviteDetails, setInviteDetails] = useState(null)
+  const [inviteLoading, setInviteLoading] = useState(Boolean(new URLSearchParams(window.location.search).get('invite')))
+  const [inviteError, setInviteError] = useState('')
+
+  useEffect(() => {
+    if (!inviteToken || !supabase) {
+      setInviteLoading(false)
+      setInviteDetails(null)
+      return undefined
+    }
+    let active = true
+    setInviteLoading(true)
+    supabase.rpc('get_team_invite_details', { invite_token: inviteToken }).then(({ data, error }) => {
+      if (!active) return
+      setInviteDetails(error ? null : data)
+      setInviteError(error ? 'Este convite é inválido, foi cancelado ou expirou. Peça à empresa um novo link.' : '')
+      setInviteLoading(false)
+    })
+    return () => { active = false }
+  }, [inviteToken])
+
+  function finishInvite() {
+    const url = new URL(window.location.href)
+    url.searchParams.delete('invite')
+    url.hash = 'app'
+    window.history.replaceState({}, '', url)
+    setInviteToken('')
+    setInviteDetails(null)
+    setInviteError('')
+  }
 
   useEffect(() => {
     if (!supabase) {
@@ -122,7 +172,10 @@ function Platform({ onExit }) {
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
-          options: { data: { full_name: fullName, organization_name: organizationName } },
+          options: {
+            data: { full_name: fullName, ...(organizationName ? { organization_name: organizationName } : {}) },
+            ...(inviteToken ? { emailRedirectTo: window.location.href } : {}),
+          },
         })
         if (error) throw error
         if (data.session) {
@@ -130,7 +183,9 @@ function Platform({ onExit }) {
           window.location.hash = '#app'
         } else {
           setMode('login')
-          setAuthNotice('Conta criada. Confirme seu e-mail e depois entre para concluir a configuração da empresa.')
+          setAuthNotice(inviteToken
+            ? 'Conta criada. Se a confirmação estiver ativa, o Supabase precisa confirmar o cadastro. Depois entre com este mesmo endereço para aceitar o convite.'
+            : 'Conta criada. Confirme seu e-mail e depois entre para concluir a configuração da empresa.')
         }
       } else {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password })
@@ -164,14 +219,18 @@ function Platform({ onExit }) {
       busy={busy}
       error={authError}
       notice={authNotice}
+      inviteToken={inviteToken}
+      inviteDetails={inviteDetails}
+      inviteLoading={inviteLoading}
+      inviteError={inviteError}
       onExit={onExit}
     />
   }
 
-  return <Workspace session={session} onSignOut={signOut} onExit={onExit} />
+  return <Workspace session={session} inviteToken={inviteToken} inviteDetails={inviteDetails} onInviteAccepted={finishInvite} onSignOut={signOut} onExit={onExit} />
 }
 
-function AccessScreen({ mode, setMode, onSubmit, busy, error, notice, onExit }) {
+function AccessScreen({ mode, setMode, onSubmit, busy, error, notice, inviteToken, inviteDetails, inviteLoading, inviteError, onExit }) {
   return (
     <main className="access-shell">
       <div className="access-topbar"><Brand onClick={onExit} /><button className="access-back" onClick={onExit}><ArrowLeft size={15} /> Voltar ao site</button></div>
@@ -189,18 +248,21 @@ function AccessScreen({ mode, setMode, onSubmit, busy, error, notice, onExit }) 
         </section>
         <section className="access-card">
           <div className="access-card-mark"><BrandMark /></div>
-          <span className="access-kicker">{mode === 'login' ? 'BEM-VINDO DE VOLTA' : 'COMECE POR AQUI'}</span>
-          <h2>{mode === 'login' ? 'Acesse sua conta' : 'Crie sua conta'}</h2>
-          <p>{mode === 'login' ? 'Entre para acompanhar sua operação.' : 'Configure sua empresa e convide sua equipe depois.'}</p>
+          <span className="access-kicker">{inviteToken ? 'CONVITE PARA A EQUIPE' : mode === 'login' ? 'BEM-VINDO DE VOLTA' : 'COMECE POR AQUI'}</span>
+          <h2>{inviteToken ? 'Entre na equipe' : mode === 'login' ? 'Acesse sua conta' : 'Crie sua conta'}</h2>
+          <p>{inviteToken && inviteDetails ? `${inviteDetails.organization_name} convidou você como ${roleNames[inviteDetails.role] || 'membro'}.` : mode === 'login' ? 'Entre para acompanhar sua operação.' : 'Configure sua empresa e convide sua equipe depois.'}</p>
+          {inviteLoading && <div className="access-message"><LoaderCircle className="spin" size={16} /><span>Validando convite…</span></div>}
+          {inviteError && <div className="access-message access-error"><AlertCircle size={16} /><span>{inviteError}</span></div>}
+          {inviteToken && inviteDetails && !inviteLoading && <div className="access-message invite-manual-note"><Mail size={16} /><span>O convite não depende do SMTP do Prumo. Se a confirmação de conta estiver ativa no Supabase, a confirmação ainda depende da configuração de e-mail do Supabase.</span></div>}
           {!isSupabaseConfigured ? (
             <div className="access-message access-error"><AlertCircle size={17} /><span>O acesso precisa ser conectado ao Supabase. Configure as variáveis VITE_SUPABASE_URL e VITE_SUPABASE_PUBLISHABLE_KEY no ambiente do projeto.</span></div>
           ) : (
             <form className="platform-form access-form" onSubmit={onSubmit}>
               {mode === 'signup' && <>
                 <label>Seu nome<input name="full_name" autoComplete="name" placeholder="Ex.: Marina Alves" required /></label>
-                <label>Nome da empresa<input name="organization_name" autoComplete="organization" placeholder="Ex.: Aurora Facilities" minLength="2" required /></label>
+                {!inviteToken && <label>Nome da empresa<input name="organization_name" autoComplete="organization" placeholder="Ex.: Aurora Facilities" minLength="2" required /></label>}
               </>}
-              <label>E-mail profissional<span className="input-icon"><Mail size={15} /><input name="email" type="email" autoComplete="email" placeholder="voce@empresa.com.br" required /></span></label>
+              <label>E-mail profissional<span className="input-icon"><Mail size={15} /><input name="email" type="email" autoComplete="email" placeholder="voce@empresa.com.br" defaultValue={inviteDetails?.email || ''} readOnly={Boolean(inviteDetails)} required /></span></label>
               <label>Senha<span className="input-icon"><LockKeyhole size={15} /><input name="password" type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} placeholder="Mínimo de 8 caracteres" minLength="8" required /></span></label>
               {error && <div className="access-message access-error" role="alert"><AlertCircle size={16} /><span>{error}</span></div>}
               {notice && <div className="access-message access-success" role="status"><CheckCircle2 size={16} /><span>{notice}</span></div>}
@@ -215,7 +277,7 @@ function AccessScreen({ mode, setMode, onSubmit, busy, error, notice, onExit }) 
   )
 }
 
-function Workspace({ session, onSignOut, onExit }) {
+function Workspace({ session, inviteToken, inviteDetails, onInviteAccepted, onSignOut, onExit }) {
   const user = session.user
   const [profile, setProfile] = useState(null)
   const [organization, setOrganization] = useState(null)
@@ -237,6 +299,18 @@ function Workspace({ session, onSignOut, onExit }) {
   const [organizationName, setOrganizationName] = useState(user.user_metadata?.organization_name || '')
   const [setupBusy, setSetupBusy] = useState(false)
   const [setupError, setSetupError] = useState('')
+  const [inviteProcessing, setInviteProcessing] = useState(Boolean(inviteToken))
+  const [inviteAcceptError, setInviteAcceptError] = useState('')
+  const [invitations, setInvitations] = useState([])
+  const [showInviteForm, setShowInviteForm] = useState(false)
+  const [createdInvite, setCreatedInvite] = useState(null)
+  const [inviteBusy, setInviteBusy] = useState(false)
+  const [inviteActionError, setInviteActionError] = useState('')
+  const [copiedInvite, setCopiedInvite] = useState(false)
+  const [selectedPlan, setSelectedPlan] = useState('')
+  const [selectedInterval, setSelectedInterval] = useState('monthly')
+  const [planBusy, setPlanBusy] = useState(false)
+  const [planError, setPlanError] = useState('')
 
   async function refreshWorkspace() {
     setLoading(true)
@@ -254,24 +328,48 @@ function Workspace({ session, onSignOut, onExit }) {
       return
     }
     setProfile(memberProfile)
-    const [organizationResult, ordersResult, clientsResult, membersResult, evidenceResult] = await Promise.all([
+    const [organizationResult, ordersResult, clientsResult, membersResult, evidenceResult, invitationsResult] = await Promise.all([
       supabase.from('organizations').select('*').eq('id', memberProfile.organization_id).maybeSingle(),
       supabase.from('service_orders').select('*').eq('organization_id', memberProfile.organization_id).order('created_at', { ascending: false }),
       supabase.from('clients').select('*').eq('organization_id', memberProfile.organization_id).order('name', { ascending: true }),
       supabase.from('profiles').select('*').eq('organization_id', memberProfile.organization_id).order('created_at', { ascending: true }),
       supabase.from('service_evidence').select('*').eq('organization_id', memberProfile.organization_id).order('created_at', { ascending: false }),
+      ['owner', 'manager'].includes(memberProfile.role) ? supabase.rpc('list_team_invitations') : Promise.resolve({ data: [], error: null }),
     ])
-    const failed = [organizationResult, ordersResult, clientsResult, membersResult, evidenceResult].find((result) => result.error)
+    const failed = [organizationResult, ordersResult, clientsResult, membersResult, evidenceResult, invitationsResult].find((result) => result.error)
     if (failed) setPageError('Alguns dados não carregaram. Confira as tabelas e políticas do schema do Prumo no Supabase.')
     setOrganization(organizationResult.data || null)
     setOrders(ordersResult.data || [])
     setClients(clientsResult.data || [])
     setMembers(membersResult.data || [])
     setEvidence(evidenceResult.data || [])
+    setInvitations(invitationsResult.data || [])
     setLoading(false)
   }
 
-  useEffect(() => { refreshWorkspace() }, [user.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    let active = true
+    if (!inviteToken) {
+      refreshWorkspace()
+      return undefined
+    }
+    setInviteProcessing(true)
+    setInviteAcceptError('')
+    supabase.rpc('accept_team_invite', { invite_token: inviteToken, member_name: user.user_metadata?.full_name || '' }).then(({ error }) => {
+      if (!active) return
+      setInviteProcessing(false)
+      if (error) {
+        setInviteAcceptError(error.message?.includes('invited email')
+          ? `Este convite foi enviado para ${inviteDetails?.email || 'outro e-mail'}. Saia e entre ou crie uma conta usando esse endereço.`
+          : error.message?.includes('already belongs')
+            ? 'Esta conta já está vinculada a outra empresa. Use uma conta sem vínculo para aceitar este convite.'
+            : 'Não foi possível aceitar o convite. Ele pode ter expirado ou sido cancelado; peça à empresa um novo link.')
+      } else {
+        onInviteAccepted()
+      }
+    })
+    return () => { active = false }
+  }, [user.id, inviteToken]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const selectedOrder = orders.find((order) => order.id === selectedOrderId) || null
   const orderClientNames = useMemo(() => Object.fromEntries(clients.map((client) => [client.id, client.name])), [clients])
@@ -297,6 +395,76 @@ function Workspace({ session, onSignOut, onExit }) {
       setSetupError(error.message.includes('already belongs') ? 'Esta conta já está associada a uma empresa. Atualize a página para continuar.' : 'Não foi possível criar a empresa. Confira se o schema.sql foi executado no Supabase e tente novamente.')
       return
     }
+    await refreshWorkspace()
+  }
+
+  async function createTeamInvite(event) {
+    event.preventDefault()
+    const form = event.currentTarget
+    const values = new FormData(form)
+    setInviteBusy(true)
+    setInviteActionError('')
+    const { data, error } = await supabase.rpc('create_team_invite', {
+      invitee_email: String(values.get('email') || '').trim().toLowerCase(),
+      invitee_role: String(values.get('role') || 'technician'),
+    })
+    setInviteBusy(false)
+    if (error) {
+      setInviteActionError(error.message?.includes('already a pending')
+        ? 'Já existe um convite pendente para esse e-mail.'
+        : error.message?.includes('already a member')
+          ? 'Esse e-mail já pertence à equipe.'
+          : 'Não foi possível criar o convite. Confira se o schema atualizado foi aplicado no Supabase.')
+      return
+    }
+    const url = new URL(window.location.href)
+    url.searchParams.set('invite', data.token)
+    url.hash = 'acesso'
+    setCreatedInvite({ ...data, link: url.toString() })
+    setShowInviteForm(false)
+    form.reset()
+    await refreshWorkspace()
+  }
+
+  async function revokeInvitation(invitationId) {
+    setInviteActionError('')
+    const { error } = await supabase.rpc('revoke_team_invitation', { invitation_id: invitationId })
+    if (error) {
+      setInviteActionError('Não foi possível cancelar esse convite.')
+      return
+    }
+    setNotice('Convite cancelado.')
+    await refreshWorkspace()
+  }
+
+  async function copyInviteLink() {
+    try {
+      await navigator.clipboard.writeText(createdInvite.link)
+      setCopiedInvite(true)
+    } catch {
+      setInviteActionError('Não foi possível copiar automaticamente. Selecione e copie o link exibido.')
+    }
+  }
+
+  async function savePlan(startTrial) {
+    const planToSave = selectedPlan || organization?.plan_code
+    const intervalToSave = organization?.plan_interval && !selectedPlan ? organization.plan_interval : selectedInterval
+    if (!planToSave) return
+    setPlanBusy(true)
+    setPlanError('')
+    const { error } = await supabase.rpc('select_organization_plan', {
+      requested_plan: planToSave,
+      requested_interval: intervalToSave,
+      start_trial: startTrial,
+    })
+    setPlanBusy(false)
+    if (error) {
+      setPlanError(error.message?.includes('already been used')
+        ? 'Este período de teste já foi usado nesta empresa. Escolha a opção de plano pago.'
+        : 'Não foi possível salvar a escolha. Confira se o schema atualizado foi aplicado no Supabase.')
+      return
+    }
+    setNotice(startTrial ? 'Período de teste iniciado por 14 dias. Nenhuma cobrança foi feita.' : 'Plano registrado. O checkout ainda será conectado; nenhuma cobrança foi feita.')
     await refreshWorkspace()
   }
 
@@ -394,6 +562,13 @@ function Workspace({ session, onSignOut, onExit }) {
     await refreshWorkspace()
   }
 
+  if (inviteProcessing) return <div className="platform-loading"><LoaderCircle className="spin" size={23} /><span>Validando e aceitando o convite…</span></div>
+
+  if (inviteAcceptError) return <main className="setup-shell">
+    <div className="access-topbar"><Brand onClick={onExit} /><button className="access-back" onClick={onSignOut}><LogOut size={15} /> Sair e trocar de conta</button></div>
+    <section className="setup-card"><div className="setup-icon"><MailPlus size={23} /></div><span className="access-kicker">CONVITE DA EQUIPE</span><h1>Não foi possível entrar</h1><p>{inviteAcceptError}</p><div className="access-message access-error invite-error-box"><AlertCircle size={16} /><span>O convite precisa ser aceito com o endereço de e-mail para o qual foi enviado.</span></div></section>
+  </main>
+
   if (loading) return <div className="platform-loading"><LoaderCircle className="spin" size={23} /><span>Carregando sua operação…</span></div>
 
   if (!profile) {
@@ -411,6 +586,13 @@ function Workspace({ session, onSignOut, onExit }) {
           <button className="platform-primary" disabled={setupBusy}>{setupBusy ? <LoaderCircle className="spin" size={16} /> : null}Criar espaço de trabalho <ArrowRight size={16} /></button>
         </form>
       </section>
+    </main>
+  }
+
+  if (profile.role === 'owner' && !organization?.plan_code) {
+    return <main className="setup-shell plan-setup-shell">
+      <div className="access-topbar"><Brand onClick={onExit} /><button className="access-back" onClick={onSignOut}><LogOut size={15} /> Sair da conta</button></div>
+      <PlanPage currentPlan={null} organization={organization} selectedPlan={selectedPlan} setSelectedPlan={setSelectedPlan} selectedInterval={selectedInterval} setSelectedInterval={setSelectedInterval} onSave={savePlan} busy={planBusy} error={planError} initialSetup />
     </main>
   }
 
@@ -471,6 +653,23 @@ function Workspace({ session, onSignOut, onExit }) {
           <button className="platform-primary" disabled={saving}>{saving ? <LoaderCircle className="spin" size={16} /> : <Plus size={16} />}Salvar cliente</button>
         </form>
       </Modal>}
+      {showInviteForm && <Modal title="Convidar colaborador" subtitle="O convite fica válido por 7 dias e só pode ser aceito com este e-mail." onClose={() => setShowInviteForm(false)}>
+        <form className="platform-form modal-form" onSubmit={createTeamInvite}>
+          <label>E-mail do colaborador<input name="email" type="email" placeholder="pessoa@empresa.com.br" autoComplete="email" required autoFocus /></label>
+          <label>Permissão<select name="role" defaultValue="technician"><option value="technician">Técnico</option><option value="manager">Gestor</option></select></label>
+          {inviteActionError && <div className="access-message access-error"><AlertCircle size={16} /><span>{inviteActionError}</span></div>}
+          <button className="platform-primary" disabled={inviteBusy}>{inviteBusy ? <LoaderCircle className="spin" size={16} /> : <MailPlus size={16} />}Criar convite</button>
+        </form>
+      </Modal>}
+      {createdInvite && <Modal title="Convite pronto" subtitle="O link é exibido apenas agora. Copie ou abra um rascunho de e-mail para enviar ao colaborador." onClose={() => { setCreatedInvite(null); setCopiedInvite(false); setInviteActionError('') }}>
+        <div className="invite-ready">
+          <div className="access-message invite-manual-note"><Mail size={16} /><span>Sem SMTP configurado, o Prumo não envia a mensagem sozinho. Use o rascunho abaixo ou envie o link por outro canal seguro.</span></div>
+          <label>Link individual do convite<input readOnly value={createdInvite.link} onFocus={(event) => event.target.select()} /></label>
+          <div className="invite-actions"><button className="platform-secondary" onClick={copyInviteLink}><Copy size={15} />{copiedInvite ? 'Link copiado' : 'Copiar link'}</button><a className="platform-primary" href={`mailto:${encodeURIComponent(createdInvite.email)}?subject=${encodeURIComponent(`Convite para ${organization?.name || 'a equipe Prumo'}`)}&body=${encodeURIComponent(`Olá! Você foi convidado para participar da equipe ${organization?.name || 'no Prumo'} como ${roleNames[createdInvite.role] || 'membro'}.\n\nCrie sua conta ou entre usando ${createdInvite.email} neste link (válido por 7 dias):\n${createdInvite.link}\n\nSe precisar, peça um novo convite ao administrador.`)}`}><Mail size={15} />Abrir rascunho de e-mail</a></div>
+          <p>Por segurança, o link só pode ser usado pela conta autenticada com {createdInvite.email}. Se perder o link, cancele o convite e crie outro.</p>
+          {inviteActionError && <div className="access-message access-error"><AlertCircle size={16} /><span>{inviteActionError}</span></div>}
+        </div>
+      </Modal>}
     </div>
   )
 
@@ -488,8 +687,9 @@ function Workspace({ session, onSignOut, onExit }) {
     />
     if (section === 'orders') return <OrdersPage orders={filteredOrders} allCount={orders.length} query={query} setQuery={setQuery} clients={orderClientNames} onCreate={() => { setActionError(''); setShowOrderForm(true) }} onSelect={setSelectedOrderId} />
     if (section === 'clients') return <ClientsPage clients={filteredClients} allCount={clients.length} query={query} setQuery={setQuery} orders={orders} onCreate={() => { setActionError(''); setShowClientForm(true) }} />
-    if (section === 'team') return <TeamPage members={members} />
+    if (section === 'team') return <TeamPage members={members} invitations={invitations} canManage={['owner', 'manager'].includes(profile.role)} onInvite={() => { setInviteActionError(''); setCreatedInvite(null); setShowInviteForm(true) }} onRevoke={revokeInvitation} />
     if (section === 'evidence') return <EvidencePage evidence={evidence} orders={orders} onSelectOrder={setSelectedOrderId} />
+    if (section === 'billing') return <PlanPage currentPlan={organization?.plan_code} organization={organization} selectedPlan={selectedPlan} setSelectedPlan={setSelectedPlan} selectedInterval={selectedInterval} setSelectedInterval={setSelectedInterval} onSave={savePlan} busy={planBusy} error={planError} canManage={profile.role === 'owner'} billingStatus={organization?.billing_status} />
     return <SettingsPage organization={organization} profile={profile} user={user} />
   }
 }
@@ -552,14 +752,72 @@ function ClientsPage({ clients, allCount, query, setQuery, orders, onCreate }) {
   </>
 }
 
-function TeamPage({ members }) {
+function TeamPage({ members, invitations, canManage, onInvite, onRevoke }) {
   return <>
-    <div className="page-heading"><div><span className="workspace-eyebrow">PESSOAS DA EMPRESA</span><h1>Equipe</h1><p>Veja quem tem acesso a este espaço de trabalho.</p></div></div>
+    <div className="page-heading"><div><span className="workspace-eyebrow">PESSOAS DA EMPRESA</span><h1>Equipe</h1><p>Convide colaboradores pelo e-mail e acompanhe quem já tem acesso.</p></div>{canManage && <button className="platform-primary" onClick={onInvite}><MailPlus size={16} /> Convidar colaborador</button>}</div>
     <section className="workspace-card list-card"><div className="list-toolbar"><div><strong>{members.length} {members.length === 1 ? 'membro' : 'membros'}</strong><span> neste espaço</span></div><span className="team-access-note"><ShieldCheck size={14} /> Acesso protegido</span></div>
       <div className="members-list">{members.map((member) => <article className="member-row" key={member.id}><span className="member-avatar">{initials(member.full_name)}</span><span className="member-name"><strong>{member.full_name || 'Membro sem nome'}</strong><small>{member.role === 'owner' ? 'Administrador da empresa' : 'Membro da empresa'}</small></span><span className="member-role">{roleNames[member.role] || 'Membro'}</span>{member.role === 'owner' && <span className="owner-tag">Admin principal</span>}</article>)}</div>
-      <div className="team-note"><Users size={16} /><span>Os novos membros precisam criar uma conta autenticada e ter seu perfil associado à empresa no Supabase.</span></div>
+      <div className="team-note"><Users size={16} /><span>O colaborador cria ou acessa a conta usando o mesmo endereço que recebeu o convite. A associação à empresa acontece ao aceitar o link.</span></div>
     </section>
+    {canManage && <section className="workspace-card list-card invitations-card"><div className="list-toolbar"><div><strong>Convites pendentes</strong><span> · {invitations.length}</span></div><span className="invite-expiry-note">Validade de 7 dias</span></div>
+      {invitations.length ? <div className="members-list">{invitations.map((invitation) => <article className="member-row invitation-row" key={invitation.id}><span className="member-avatar invitation-avatar"><Mail size={15} /></span><span className="member-name"><strong>{invitation.email}</strong><small>Enviado {formatDate(invitation.created_at, { day: '2-digit', month: 'short', year: 'numeric' })} · expira {formatDate(invitation.expires_at, { day: '2-digit', month: 'short', year: 'numeric' })}</small></span><span className="member-role">{roleNames[invitation.role]}</span><button className="revoke-invite" onClick={() => onRevoke(invitation.id)} title="Cancelar convite" aria-label={`Cancelar convite para ${invitation.email}`}><Trash2 size={15} /></button></article>)}</div> : <EmptyState icon={MailPlus} title="Nenhum convite pendente" description="Os convites que você criar aparecerão aqui até serem aceitos ou expirarem." />}
+    </section>}
   </>
+}
+
+function PlanPage({ currentPlan, organization, selectedPlan, setSelectedPlan, selectedInterval, setSelectedInterval, onSave, busy, error, initialSetup = false, canManage = true, billingStatus = 'beta' }) {
+  const [stage, setStage] = useState(currentPlan ? 'checkout' : 'plans')
+  const activePlan = plans.find((plan) => plan.code === currentPlan)
+  const chosenPlan = plans.find((plan) => plan.code === (selectedPlan || currentPlan))
+  const localPlan = selectedPlan || currentPlan || ''
+  const currentInterval = selectedInterval || organization?.plan_interval || 'monthly'
+  const hasUsedTrial = Boolean(organization?.trial_started_at)
+
+  useEffect(() => {
+    if (organization?.plan_interval && !selectedPlan) setSelectedInterval(organization.plan_interval)
+    if (currentPlan && !selectedPlan) setSelectedPlan(currentPlan)
+  }, [organization?.plan_interval, currentPlan, selectedPlan, setSelectedInterval, setSelectedPlan])
+
+  const trialExpired = organization?.trial_ends_at && new Date(organization.trial_ends_at).getTime() <= Date.now()
+  const currentStatus = billingStatus === 'trialing'
+    ? trialExpired ? 'Teste encerrado · nenhuma cobrança feita' : `Teste grátis até ${formatDate(organization?.trial_ends_at, { day: '2-digit', month: 'long', year: 'numeric' })}`
+    : billingStatus === 'checkout_pending'
+      ? 'Plano escolhido · pagamento pendente'
+      : 'Acesso beta · sem cobrança'
+
+  return <section className={`plan-page ${initialSetup ? 'plan-setup-card' : ''}`}>
+    <div className="page-heading"><div><span className="workspace-eyebrow">{initialSetup ? 'PLANO DA CONTA QUE VOCÊ CRIOU' : 'ASSINATURA DA EMPRESA'}</span><h1>{initialSetup ? 'Escolha seu plano' : 'Plano e pagamento'}</h1><p>{initialSetup ? 'A contratação fica vinculada à conta que criou esta empresa.' : 'O responsável que criou a conta pode gerenciar a assinatura.'}</p></div></div>
+    {!initialSetup && <div className="workspace-card billing-summary"><span className="billing-icon"><CreditCard size={18} /></span><div><small>STATUS DA ASSINATURA</small><strong>{currentStatus}</strong><p>{activePlan?.name || 'Plano não selecionado'}{organization?.plan_price_cents ? ` · ${formatPrice(organization.plan_price_cents)} / ${organization.plan_interval === 'yearly' ? 'ano' : 'mês'}` : ''}</p></div>{canManage && <button className="platform-secondary" onClick={() => setStage('plans')}>Mudar plano</button>}</div>}
+    {stage === 'plans' ? <>
+      <div className="billing-interval-switch" role="group" aria-label="Período de cobrança"><button className={currentInterval === 'monthly' ? 'active' : ''} onClick={() => setSelectedInterval('monthly')}>Mensal</button><button className={currentInterval === 'yearly' ? 'active' : ''} onClick={() => setSelectedInterval('yearly')}>Anual <span>2 meses grátis</span></button></div>
+      <div className="plan-choice-grid">{plans.map((plan) => {
+        const amount = planPrice(plan, currentInterval)
+        return <button key={plan.code} type="button" className={`workspace-card plan-choice ${localPlan === plan.code ? 'plan-selected' : ''}`} onClick={() => setSelectedPlan(plan.code)}>
+          <span className="plan-choice-top"><strong>{plan.name}</strong><span>{localPlan === plan.code ? <CheckCircle2 size={17} /> : null}</span></span><span className="plan-price">{formatPrice(amount)} <small>/ {currentInterval === 'yearly' ? 'ano' : 'mês'}</small></span><span className="plan-description">{plan.detail}</span><span className="plan-features">{plan.features.map((feature) => <span key={feature}><CheckCircle2 size={14} />{feature}</span>)}</span>
+        </button>
+      })}</div>
+      <p className="plan-pricing-note">Valores provisórios para estruturar o fluxo. O checkout ainda não está conectado.</p>
+      {error && <div className="access-message access-error"><AlertCircle size={16} /><span>{error}</span></div>}
+      {canManage ? <button className="platform-primary plan-continue" disabled={!localPlan} onClick={() => setStage('checkout')}>Continuar <ArrowRight size={16} /></button> : <div className="access-message"><ShieldCheck size={16} /><span>Apenas a pessoa que criou a conta pode alterar o plano.</span></div>}
+    </> : <section className="workspace-card payment-stage">
+      <span className="billing-icon"><CreditCard size={18} /></span><span className="access-kicker">ETAPA 2 · TESTE OU COMPRA</span><h2>{chosenPlan?.name || activePlan?.name || 'Plano selecionado'}</h2>
+      <p>{formatPrice(planPrice(chosenPlan || activePlan || plans[0], currentInterval))} / {currentInterval === 'yearly' ? 'ano' : 'mês'} · {currentInterval === 'yearly' ? 'cobrança anual' : 'cobrança mensal'}</p>
+      <div className="checkout-choice-grid">
+        <article className={`checkout-choice ${!hasUsedTrial ? 'trial-choice' : 'trial-used'}`}>
+          <span className="checkout-choice-kicker">PERÍODO DE TESTE</span><strong>{hasUsedTrial ? trialExpired ? 'Teste já utilizado' : 'Teste em andamento' : '14 dias grátis'}</strong><p>{hasUsedTrial ? `${trialExpired ? 'O teste terminou' : 'O teste termina'} em ${formatDate(organization?.trial_ends_at, { day: '2-digit', month: 'short', year: 'numeric' })}.` : 'Acesso ao plano sem cadastrar pagamento e sem cobrança automática ao final.'}</p>
+          {canManage && <button className="platform-secondary" disabled={busy || hasUsedTrial || !chosenPlan} onClick={() => onSave(true)}>{busy ? <LoaderCircle className="spin" size={15} /> : null}Iniciar teste grátis</button>}
+        </article>
+        <article className="checkout-choice">
+          <span className="checkout-choice-kicker">ASSINAR PLANO</span><strong>{formatPrice(planPrice(chosenPlan || activePlan || plans[0], currentInterval))} <small>/ {currentInterval === 'yearly' ? 'ano' : 'mês'}</small></strong><p>O Prumo ainda não tem provedor de pagamento conectado. Registrar esta opção não cobra nem captura dados de cartão.</p>
+          {canManage && <button className="platform-primary" disabled={busy || !chosenPlan} onClick={() => onSave(false)}>{busy ? <LoaderCircle className="spin" size={15} /> : <CreditCard size={15} />}Registrar plano e continuar no beta</button>}
+        </article>
+      </div>
+      {error && <div className="access-message access-error"><AlertCircle size={16} /><span>{error}</span></div>}
+      <div className="payment-placeholder"><span>Próxima etapa de pagamento</span><strong>Checkout será habilitado quando o provedor for integrado</strong><small>O valor e o período ficam registrados no Supabase; nenhuma cobrança acontece nesta etapa.</small></div>
+      {!initialSetup && canManage && <button className="platform-secondary checkout-back" onClick={() => setStage('plans')}>Voltar aos planos</button>}
+      {!canManage && <div className="access-message"><ShieldCheck size={16} /><span>A assinatura é administrada pela pessoa que criou a conta.</span></div>}
+    </section>}
+  </section>
 }
 
 function EvidencePage({ evidence, orders, onSelectOrder }) {

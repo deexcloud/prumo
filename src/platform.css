@@ -367,3 +367,74 @@
   .client-card { padding: 13px; }
   .owner-tag { display: none; }
 }
+
+.invite-error-box { margin-top: 18px; }
+.invitations-card { margin-top: 14px; }
+.invite-expiry-note { color: #838579; font-size: 9px; }
+.invitation-avatar { border-color: rgba(232,233,168,.18); background: rgba(232,233,168,.08); color: #d7d99a; }
+.revoke-invite { display: grid; width: 31px; height: 31px; flex: 0 0 31px; place-items: center; border: 1px solid transparent; border-radius: 7px; background: transparent; color: #a58279; cursor: pointer; }
+.revoke-invite:hover { border-color: rgba(225,131,119,.2); background: rgba(116,49,44,.16); color: #e0a39b; }
+.invite-ready { display: grid; gap: 14px; margin-top: 17px; }
+.invite-ready > label { display: grid; gap: 7px; color: #c8cabf; font-size: 10px; font-weight: 600; }
+.invite-ready input { width: 100%; height: 39px; padding: 0 10px; border: 1px solid #34352e; border-radius: 8px; outline: 0; background: #11120f; color: #e8e9df; font: 400 10px 'DM Sans',sans-serif; }
+.invite-manual-note { border-color: rgba(131,171,213,.2); background: rgba(67,91,117,.13); color: #b0c3d3; }
+.invite-actions { display: flex; flex-wrap: wrap; gap: 9px; }
+.invite-actions > a { text-decoration: none; }
+.invite-ready > p { margin: 0; color: #898b80; font-size: 9px; line-height: 1.6; }
+.plan-setup-shell { align-items: start; padding: 110px 22px 50px; }
+.plan-setup-card { width: min(950px,100%); }
+.plan-page { width: 100%; }
+.billing-interval-switch { display: inline-flex; width: fit-content; gap: 4px; margin: 0 0 13px; padding: 4px; border: 1px solid #30312b; border-radius: 9px; background: #151612; }
+.billing-interval-switch button { display: inline-flex; min-height: 31px; align-items: center; gap: 7px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: #96988d; cursor: pointer; font: 600 9px 'DM Sans',sans-serif; }
+.billing-interval-switch button.active { background: #292a22; color: #e5e6aa; }
+.billing-interval-switch button span { color: #b7c99d; font-size: 8px; }
+.plan-choice-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; }
+.plan-choice { display: flex; min-height: 245px; flex-direction: column; align-items: stretch; padding: 17px; color: #e9eae1; cursor: pointer; text-align: left; transition: border-color .15s,background .15s,transform .15s; }
+.plan-choice:hover { transform: translateY(-2px); border-color: #555746; }
+.plan-choice.plan-selected { border-color: #a7aa70; background: linear-gradient(145deg,rgba(232,233,168,.09),#171815 72%); box-shadow: 0 0 0 1px rgba(232,233,168,.1); }
+.plan-choice-top { display: flex; align-items: center; justify-content: space-between; color: #eeefe6; font: 650 17px 'Manrope',sans-serif; }
+.plan-choice-top > span { min-width: 18px; color: #e0e2a0; }
+.plan-price { margin-top: 12px; color: #e3e4a5; font-size: 16px; font-weight: 700; }
+.plan-price small { color: #888a7f; font-size: 9px; font-weight: 500; }
+.plan-description { min-height: 39px; margin-top: 8px; color: #929489; font-size: 9px; line-height: 1.6; }
+.plan-features { display: grid; gap: 9px; margin-top: auto; padding-top: 16px; }
+.plan-features > span { display: flex; align-items: center; gap: 7px; color: #b9bbb0; font-size: 9px; }
+.plan-features svg { flex: 0 0 auto; color: #aeb17b; }
+.plan-continue { margin-top: 16px; }
+.plan-pricing-note { margin: 12px 0 0; color: #77796e; font-size: 9px; }
+.billing-summary { display: flex; align-items: center; gap: 13px; margin-bottom: 14px; padding: 14px; }
+.billing-icon { display: grid; width: 37px; height: 37px; flex: 0 0 37px; place-items: center; border: 1px solid rgba(232,233,168,.17); border-radius: 9px; background: rgba(232,233,168,.07); color: #d9db9b; }
+.billing-summary > div { display: grid; flex: 1; gap: 4px; }
+.billing-summary small { color: #818378; font-size: 8px; font-weight: 700; letter-spacing: 1px; }
+.billing-summary strong { color: #e3e4d9; font-size: 11px; }
+.billing-summary p { margin: 0; color: #85877c; font-size: 9px; }
+.payment-stage { display: grid; max-width: 660px; gap: 12px; padding: 22px; }
+.payment-stage > .billing-icon { margin-bottom: 3px; }
+.payment-stage h2 { margin: -6px 0 0; color: #eff0e7; font: 650 22px 'Manrope',sans-serif; }
+.payment-stage > p { max-width: 510px; margin: 0; color: #9a9c91; font-size: 10px; line-height: 1.7; }
+.checkout-choice-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 11px; margin-top: 5px; }
+.checkout-choice { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; gap: 9px; padding: 15px; border: 1px solid #30312b; border-radius: 9px; background: #141512; }
+.checkout-choice.trial-choice { border-color: rgba(164,190,140,.28); background: rgba(98,126,85,.08); }
+.checkout-choice.trial-used { opacity: .78; }
+.checkout-choice-kicker { color: #8c8e82; font-size: 8px; font-weight: 700; letter-spacing: 1px; }
+.checkout-choice > strong { color: #e9eadf; font: 650 17px 'Manrope',sans-serif; }
+.checkout-choice > strong small { color: #9b9d91; font: 500 9px 'DM Sans',sans-serif; }
+.checkout-choice > p { flex: 1; margin: 0; color: #999b90; font-size: 9px; line-height: 1.65; }
+.checkout-choice > button { width: 100%; margin-top: 3px; }
+.payment-placeholder { display: grid; gap: 5px; margin: 5px 0; padding: 15px; border: 1px dashed #45463b; border-radius: 9px; background: rgba(255,255,255,.015); }
+.payment-placeholder span { color: #85877c; font-size: 8px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; }
+.payment-placeholder strong { color: #dedfd3; font-size: 11px; }
+.payment-placeholder small { color: #818378; font-size: 9px; }
+.payment-actions { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 3px; }
+.payment-actions .access-message { flex: 1 1 100%; }
+.checkout-back { align-self: flex-start; }
+@media (max-width: 760px) {
+  .plan-choice-grid { grid-template-columns: 1fr; }
+  .plan-choice { min-height: 0; }
+  .plan-description { min-height: 0; }
+  .checkout-choice-grid { grid-template-columns: 1fr; }
+  .billing-summary { align-items: flex-start; flex-wrap: wrap; }
+  .billing-summary > div { min-width: calc(100% - 55px); }
+  .billing-summary > button { margin-left: 49px; }
+  .plan-setup-shell { padding-top: 86px; }
+}

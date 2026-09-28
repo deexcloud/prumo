@@ -194,10 +194,10 @@ function ContactForm({ onSubmit }) {
 function App() {
   const [menuOpen, setMenuOpen] = useState(false)
   const [notice, setNotice] = useState(null)
-  const [platformOpen, setPlatformOpen] = useState(() => ['#acesso', '#app'].includes(window.location.hash))
+  const [platformOpen, setPlatformOpen] = useState(() => ['#acesso', '#app'].includes(window.location.hash) || new URLSearchParams(window.location.search).has('invite'))
 
   useEffect(() => {
-    const syncRoute = () => setPlatformOpen(['#acesso', '#app'].includes(window.location.hash))
+    const syncRoute = () => setPlatformOpen(['#acesso', '#app'].includes(window.location.hash) || new URLSearchParams(window.location.search).has('invite'))
     window.addEventListener('hashchange', syncRoute)
     return () => window.removeEventListener('hashchange', syncRoute)
   }, [])
